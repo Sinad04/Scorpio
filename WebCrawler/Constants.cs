@@ -9,5 +9,6 @@ public static class Constants
             Environment.GetFolderPath(
                 Environment.SpecialFolder.ApplicationData), 
             DatabaseFilename);
-    
+
+    public const string CrawlerUserAgent = "ScorpioWebCrawler/indev (educational project; Sinad04 on github)";
 }

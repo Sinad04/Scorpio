@@ -1,4 +1,3 @@
-using System.Web;
 using HtmlAgilityPack;
 
 namespace WebCrawler;
@@ -9,26 +8,41 @@ public class Crawler
     private bool _crawling = true;
     private readonly LinkFrontier _frontier = new();
     private readonly CrawlerDb _database = new();
+    
+    // ========== DEBUG ==========
 
+    private static int _crawlDelayInSeconds = 2;
+    private static int _crawlTimes = 5;
+    
+    // ========== ===== ==========
+    
     public async Task CrawlAsync()
     {
-        if (_frontier.TryGetNextUrl(out var url))
+        Client.DefaultRequestHeaders.Add("User-Agent", Constants.CrawlerUserAgent);
+        
+        for (var i = 0; i < _crawlTimes; i++)
         {
-            Console.WriteLine($"Crawling {url}");
-            if (url is not null)
+            if (_frontier.TryGetNextUrl(out var url))
             {
-                var page = await FetchPageAsync(url);
-                Console.WriteLine($"Saving {page.Title} to DB");
-                await _database.SavePageAsync(page);
+                Console.WriteLine($"Crawling {url}");
+                if (url is not null)
+                {
+                    var page = await FetchPageAsync(url);
+                    Console.WriteLine($"Saving {page.Title} to DB");
+                    await _database.SavePageAsync(page);
                 
-                var links = ExtractLinks(url, page.Html);
-                foreach (var link in links) AddLinkToFrontier(link);
+                    var links = ExtractLinks(url, page.Html);
+                    foreach (var link in links) AddLinkToFrontier(link);
+                }
             }
+            else
+            {
+                await Task.Delay(100);
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(_crawlDelayInSeconds));
         }
-        else
-        {
-            await Task.Delay(100);
-        }
+        
     }
     
     // Debug
