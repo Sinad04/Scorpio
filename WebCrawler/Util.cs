@@ -48,10 +48,6 @@ public static class Util
 
     private static string NormalizePath(string path)
     {
-        // Decoding then re-encoding normalizes percent-encoding.
-        path = Uri.UnescapeDataString(path);
-        path = Uri.EscapeDataString(path);
-
         while (path.Contains("//"))
             path = path.Replace("//", "/");
 
