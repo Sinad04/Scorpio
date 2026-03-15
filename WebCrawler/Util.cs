@@ -8,6 +8,8 @@ namespace WebCrawler;
  */
 public static class Util
 {
+    public static readonly Random Random = new Random();
+    
     // Given a Url as a string, return a string of it in normalized form.
     public static string NormalizeUrl(string url)
     {
@@ -52,5 +54,17 @@ public static class Util
             path = path.Replace("//", "/");
 
         return string.IsNullOrEmpty(path) ? "/" : path; // Ensure root path.
+    }
+    
+    public static string GetBaseUrl(string url)
+    {
+        var uri = new Uri(url);
+        return $"{uri.Scheme.ToLowerInvariant()}://{uri.Host.ToLowerInvariant()}";
+    }
+    
+    public static string GetPath(string url)
+    {
+        var uri = new Uri(url);
+        return NormalizePath(uri.AbsolutePath);
     }
 }
