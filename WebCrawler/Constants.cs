@@ -10,5 +10,5 @@ public static class Constants
                 Environment.SpecialFolder.ApplicationData), 
             DatabaseFilename);
 
-    public const string CrawlerUserAgent = "ScorpioWebCrawler/indev (educational project; Sinad04 on github)";
+    public const string CrawlerUserAgent = "ScorpioWebCrawler/indev (educational project; sinad04.prog@hotmail.com; Sinad04 on github)";
 }
