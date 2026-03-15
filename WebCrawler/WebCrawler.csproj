@@ -9,6 +9,7 @@
 
     <ItemGroup>
       <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
+      <PackageReference Include="RobotsTxtParser" Version="2025.9.4" />
       <PackageReference Include="sqlite-net-pcl" Version="1.9.172" />
     </ItemGroup>
 
