@@ -1,3 +1,4 @@
+using System.Net;
 using SQLite;
 
 namespace WebCrawler;
@@ -62,7 +63,7 @@ public class CrawledPage
     [Unique, MaxLength(500)]
     public string? Url { get; set; }
     
-    public string? Title { get; set; }
+    public HttpStatusCode? ResponseCode { get; set; }
     
     public string? Content { get; set; }
     
