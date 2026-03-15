@@ -7,7 +7,6 @@ namespace WebCrawler;
  *  have and have not yet been visited.
  *
  *  TODO implement:
- *    - politeness (robots.txt, per-domain delays)
  *    - prioritization based on PageRank / freshness / depth
  *    - ...
  */
@@ -30,7 +29,7 @@ public class LinkFrontier
     }
 
     // Attempt to grab a Url from the Queue. Returns false if there's nothing available.
-    public bool TryGetNextUrl(out string? nextUrl)
+    public bool TryGetNextUrl(out string nextUrl)
     {
         return _urls.TryDequeue(out nextUrl);
     }
