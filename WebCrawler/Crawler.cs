@@ -1,36 +1,41 @@
+using System.Net;
 using HtmlAgilityPack;
+using RobotsTxtParser;
 
 namespace WebCrawler;
 
 public class Crawler
 {
     private static readonly HttpClient Client = new();
-    private bool _crawling = true;
     private readonly LinkFrontier _frontier = new();
     private readonly CrawlerDb _database = new();
+    private readonly RobotsCache _robotsCache = new(Client);
     
     // ========== DEBUG ==========
-
-    private static int _crawlDelayInSeconds = 2;
-    private static int _crawlTimes = 5;
-    
+    private static int _crawlTimes = 10; // How many "crawl iterations" it does before it stops. In the early dev phase I don't really want it going on endlessly yet.
     // ========== ===== ==========
     
     public async Task CrawlAsync()
     {
-        Client.DefaultRequestHeaders.Add("User-Agent", Constants.CrawlerUserAgent);
+        Client.DefaultRequestHeaders.Add("User-Agent", Constants.CrawlerUserAgent); // Scorpio is benign and identifies itself.
         
         for (var i = 0; i < _crawlTimes; i++)
         {
             if (_frontier.TryGetNextUrl(out var url))
             {
                 Console.WriteLine($"Crawling {url}");
-                if (url is not null)
-                {
-                    var page = await FetchPageAsync(url);
-                    Console.WriteLine($"Saving {page.Title} to DB");
-                    await _database.SavePageAsync(page);
+                var robots = await _robotsCache.TryGetRobotsAsync(Util.GetBaseUrl(url)); // Retrieve Robots.txt either from Cache or via HTTP request.
                 
+                if (robots.IsPathAllowed(Constants.CrawlerUserAgent, Util.GetPath(url)))
+                {
+                    // URL allowed according to respective Robots.txt
+                    Console.WriteLine($"crawler allowed on {url}");
+                    await EnforceRequestDelayAsync(robots);
+                    
+                    var page = await FetchPageAsync(url);
+                    
+                    await _database.SavePageAsync(page);
+                    
                     var links = ExtractLinks(url, page.Html);
                     foreach (var link in links) AddLinkToFrontier(link);
                 }
@@ -39,8 +44,6 @@ public class Crawler
             {
                 await Task.Delay(100);
             }
-
-            await Task.Delay(TimeSpan.FromSeconds(_crawlDelayInSeconds));
         }
         
     }
@@ -80,18 +83,34 @@ public class Crawler
 
         return links;
     }
+
+    private async Task EnforceRequestDelayAsync(Robots robots)
+    {
+        // TODO add a domain last visited cache to avoid unnecessary waiting 
+        var flatDelay = robots.CrawlDelay(Constants.CrawlerUserAgent, TimeSpan.FromSeconds(5));
+        
+        // Adding a little variance to make it more human-like (only add to respect the lower bound):
+        var delay = flatDelay.Add(TimeSpan.FromMilliseconds(Util.Random.Next(0, 2000)));
+        Console.WriteLine($"Waiting {delay.TotalSeconds} seconds (from {flatDelay.TotalSeconds})");
+        await Task.Delay(delay);
+    }
     
     private async Task<CrawledPage> FetchPageAsync(string url)
     {
         try
         {
             Console.WriteLine($"Fetching {url}");
-            var html = await Client.GetStringAsync(url);
+            var httpResponse = await Client.GetAsync(url);
+            var html = await httpResponse.Content.ReadAsStringAsync();
             Console.WriteLine($"Fetched {html.Substring(0, 50)}");
+            
+            // if (httpResponse.StatusCode is HttpStatusCode.TooManyRequests) DelayPenalty(url); TODO implement reaction to 429
+            
             return new CrawledPage()
             {
                 Url = url,
                 Html = html,
+                ResponseCode = httpResponse.StatusCode,
                 Content = html, // TODO extract plain text
                 CrawledAt = DateTime.UtcNow,
             };
