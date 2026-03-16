@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using System.Web;
+using HtmlAgilityPack;
 
 namespace WebCrawler;
 
@@ -66,5 +67,48 @@ public static class Util
     {
         var uri = new Uri(url);
         return NormalizePath(uri.AbsolutePath);
+    }
+    
+    public static List<string> ExtractLinks(string baseUrl, string html)
+    {
+        var links = new List<string>();
+        var doc = new HtmlDocument();
+        
+        doc.LoadHtml(html);
+
+        var anchorNodes = doc.DocumentNode.SelectNodes("//a[@href]");
+        if (anchorNodes is null) return links; // No links found.
+
+        foreach (var node in anchorNodes)
+        {
+            string href = node.GetAttributeValue("href", "");
+            if (string.IsNullOrEmpty(href)) continue;
+
+            if (Uri.TryCreate(new Uri(baseUrl), href, out var absoluteUri))
+            {
+                if (absoluteUri is null) continue; // TODO better error handling
+                if ((absoluteUri.Scheme == Uri.UriSchemeHttp) || (absoluteUri.Scheme == Uri.UriSchemeHttps))
+                {
+                    links.Add(absoluteUri.ToString());
+                }
+            }
+        }
+
+        return links;
+    }
+
+    public static string ExtractText(string html)
+    {
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        doc.DocumentNode.Descendants()
+            .Where(n => n.Name == "script" || n.Name == "style")
+            .ToList()
+            .ForEach(n => n.Remove());
+
+        string text = doc.DocumentNode.InnerText;
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+        return text;
     }
 }

@@ -16,7 +16,7 @@ public class Crawler
     private readonly CrawlerConfig _config = new(8);
     
     // ========== DEBUG ==========
-    private static int _crawlTimes = 10; // How many "crawl iterations" it does before it stops. In the early dev phase I don't really want it going on endlessly yet.
+    private static int _crawlTimes = 30; // How many "crawl iterations" it does before it stops. In the early dev phase I don't really want it going on endlessly yet.
     // ========== ===== ==========
     
     public async Task CrawlAsync()
@@ -37,10 +37,10 @@ public class Crawler
                     Console.WriteLine($"crawler allowed on {url}");
                     await EnforceRequestDelayAsync(robots, baseUrl);
                     var page = await FetchPageAsync(url);
-                    _lastAccessedCache[baseUrl] = DateTime.Now;
+                    _lastAccessedCache[baseUrl] = DateTime.UtcNow;
                     await _database.SavePageAsync(page);
                     
-                    var links = ExtractLinks(url, page.Html);
+                    var links = Util.ExtractLinks(url, page.Html);
                     foreach (var link in links) AddLinkToFrontier(link);
                 }
             }
@@ -59,35 +59,6 @@ public class Crawler
         _frontier.AddIfNew(normalizedLink);
     }
 
-
-    private List<string> ExtractLinks(string baseUrl, string html)
-    {
-        var links = new List<string>();
-        var doc = new HtmlDocument();
-        
-        doc.LoadHtml(html);
-
-        var anchorNodes = doc.DocumentNode.SelectNodes("//a[@href]");
-        if (anchorNodes is null) return links; // No links found.
-
-        foreach (var node in anchorNodes)
-        {
-            string href = node.GetAttributeValue("href", "");
-            if (string.IsNullOrEmpty(href)) continue;
-
-            if (Uri.TryCreate(new Uri(baseUrl), href, out var absoluteUri))
-            {
-                if (absoluteUri is null) continue; // TODO better error handling
-                if ((absoluteUri.Scheme == Uri.UriSchemeHttp) || (absoluteUri.Scheme == Uri.UriSchemeHttps))
-                {
-                    links.Add(absoluteUri.ToString());
-                }
-            }
-        }
-
-        return links;
-    }
-
     private async Task EnforceRequestDelayAsync(Robots robots, string baseUrl)
     {
         var now = DateTime.UtcNow;
@@ -95,8 +66,9 @@ public class Crawler
         var flatDelay = robots.CrawlDelay(Constants.CrawlerUserAgent, TimeSpan.FromSeconds(_config.FallBackDelayInSeconds)); // Robots.txt crawl delay or fallback value.
         
         var lastAccessed = _lastAccessedCache.GetValueOrDefault(baseUrl, now.Subtract(flatDelay)); // If it was never accessed before, pretend the last server response was exactly the flat Crawl Delay ago.
+        Console.WriteLine($"Last accessed: {lastAccessed}");
         var diff = now.Subtract(lastAccessed); // How much of the Crawl Delay has technically already passed since the last server response.
-        
+        Console.WriteLine($"Difference: {diff}");
         var delay = flatDelay.Subtract(diff);
         
         delay = (delay > TimeSpan.Zero)
@@ -123,7 +95,7 @@ public class Crawler
                 Url = url,
                 Html = html,
                 ResponseCode = httpResponse.StatusCode,
-                Content = html, // TODO extract plain text
+                Content = Util.ExtractText(html),
                 CrawledAt = DateTime.UtcNow,
             };
         }
