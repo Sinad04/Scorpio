@@ -8,7 +8,7 @@ namespace WebCrawler;
  */
 public static class Util
 {
-    public static readonly Random Random = new Random();
+    public static readonly Random Random = new(); // !! Not thread safe.
     
     // Given a Url as a string, return a string of it in normalized form.
     public static string NormalizeUrl(string url)

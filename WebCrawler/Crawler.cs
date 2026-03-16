@@ -4,12 +4,16 @@ using RobotsTxtParser;
 
 namespace WebCrawler;
 
+public record CrawlerConfig (int FallBackDelayInSeconds);
+
 public class Crawler
 {
     private static readonly HttpClient Client = new();
     private readonly LinkFrontier _frontier = new();
     private readonly CrawlerDb _database = new();
     private readonly RobotsCache _robotsCache = new(Client);
+    private readonly Dictionary<string, DateTime> _lastAccessedCache = new();
+    private readonly CrawlerConfig _config = new(8);
     
     // ========== DEBUG ==========
     private static int _crawlTimes = 10; // How many "crawl iterations" it does before it stops. In the early dev phase I don't really want it going on endlessly yet.
@@ -24,16 +28,16 @@ public class Crawler
             if (_frontier.TryGetNextUrl(out var url))
             {
                 Console.WriteLine($"Crawling {url}");
-                var robots = await _robotsCache.TryGetRobotsAsync(Util.GetBaseUrl(url)); // Retrieve Robots.txt either from Cache or via HTTP request.
+                var baseUrl = Util.GetBaseUrl(url);
+                var robots = await _robotsCache.TryGetRobotsAsync(baseUrl); // Retrieve Robots.txt either from Cache or via HTTP request.
                 
                 if (robots.IsPathAllowed(Constants.CrawlerUserAgent, Util.GetPath(url)))
                 {
                     // URL allowed according to respective Robots.txt
                     Console.WriteLine($"crawler allowed on {url}");
-                    await EnforceRequestDelayAsync(robots);
-                    
+                    await EnforceRequestDelayAsync(robots, baseUrl);
                     var page = await FetchPageAsync(url);
-                    
+                    _lastAccessedCache[baseUrl] = DateTime.Now;
                     await _database.SavePageAsync(page);
                     
                     var links = ExtractLinks(url, page.Html);
@@ -84,13 +88,21 @@ public class Crawler
         return links;
     }
 
-    private async Task EnforceRequestDelayAsync(Robots robots)
+    private async Task EnforceRequestDelayAsync(Robots robots, string baseUrl)
     {
-        // TODO add a domain last visited cache to avoid unnecessary waiting 
-        var flatDelay = robots.CrawlDelay(Constants.CrawlerUserAgent, TimeSpan.FromSeconds(5));
+        var now = DateTime.UtcNow;
         
-        // Adding a little variance to make it more human-like (only add to respect the lower bound):
-        var delay = flatDelay.Add(TimeSpan.FromMilliseconds(Util.Random.Next(0, 2000)));
+        var flatDelay = robots.CrawlDelay(Constants.CrawlerUserAgent, TimeSpan.FromSeconds(_config.FallBackDelayInSeconds)); // Robots.txt crawl delay or fallback value.
+        
+        var lastAccessed = _lastAccessedCache.GetValueOrDefault(baseUrl, now.Subtract(flatDelay)); // If it was never accessed before, pretend the last server response was exactly the flat Crawl Delay ago.
+        var diff = now.Subtract(lastAccessed); // How much of the Crawl Delay has technically already passed since the last server response.
+        
+        var delay = flatDelay.Subtract(diff);
+        
+        delay = (delay > TimeSpan.Zero)
+            ? delay.Add(TimeSpan.FromMilliseconds(Util.Random.Next(0, 2000))) // Adding a little variance to make it more human-like (only add to respect the lower bound).
+            : TimeSpan.Zero;
+        
         Console.WriteLine($"Waiting {delay.TotalSeconds} seconds (from {flatDelay.TotalSeconds})");
         await Task.Delay(delay);
     }
