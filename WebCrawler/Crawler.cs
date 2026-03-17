@@ -23,28 +23,29 @@ public class Crawler
         
         while (!ctoken.IsCancellationRequested) 
         {
-            if (_frontier.TryGetNextUrl(out var url))
+            if (_frontier.TryGetNextUrl(out var normalizedNextUrl))
             {
                 if (_crawlTimes >= _config.MaxCrawlIterations) throw new OperationCanceledException("Maximum Crawl Iterations reached.");
                 
-                Console.WriteLine($"Crawling {url}");
-                var baseUrl = Util.GetBaseUrl(url);
+                Console.WriteLine($"Crawling {normalizedNextUrl}");
+                var baseUrl = Util.GetBaseUrl(normalizedNextUrl);
                 var robots = await _robotsCache.TryGetRobotsAsync(baseUrl); // Retrieve Robots.txt either from Cache or via HTTP request.
-                
-                if (robots.IsPathAllowed(Constants.CrawlerUserAgent, Util.GetPath(url)))
-                {
-                    // URL allowed according to respective Robots.txt
-                    Console.WriteLine($"crawler allowed on {url}");
-                    await EnforceRequestDelayAsync(robots, baseUrl, ctoken);
-                    var page = await FetchPageAsync(url, ctoken);
-                    _lastAccessedCache[baseUrl] = DateTime.UtcNow;
-                    await _database.SavePageAsync(page);
-                    
-                    var links = Util.ExtractLinks(url, page.Html);
-                    foreach (var link in links) AddLinkToFrontier(link);
 
-                    _crawlTimes++;
-                }
+                if (!robots.IsPathAllowed(Constants.CrawlerUserAgent, Util.GetPath(normalizedNextUrl))) 
+                { Console.WriteLine($"Crawler not allowed on {normalizedNextUrl}."); continue; }
+                
+                // URL allowed according to respective Robots.txt
+                await EnforceRequestDelayAsync(robots, baseUrl, ctoken);
+                
+                var page = await FetchPageAsync(normalizedNextUrl, ctoken);
+                _lastAccessedCache[baseUrl] = DateTime.UtcNow;
+                
+                await _database.SavePageAsync(page);
+                    
+                var links = Util.ExtractLinks(normalizedNextUrl, page.Html);
+                foreach (var link in links) AddLinkToFrontier(link);
+
+                _crawlTimes++;
             }
             else
             {
