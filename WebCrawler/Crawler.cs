@@ -4,7 +4,7 @@ using RobotsTxtParser;
 
 namespace WebCrawler;
 
-public record CrawlerConfig (int FallBackDelayInSeconds);
+public record CrawlerConfig (int FallBackDelayInSeconds, int MaxCrawlIterations);
 
 public class Crawler
 {
@@ -13,20 +13,20 @@ public class Crawler
     private readonly CrawlerDb _database = new();
     private readonly RobotsCache _robotsCache = new(Client);
     private readonly Dictionary<string, DateTime> _lastAccessedCache = new();
-    private readonly CrawlerConfig _config = new(8);
+    private readonly CrawlerConfig _config = new(8, 5);
     
-    // ========== DEBUG ==========
-    private static int _crawlTimes = 30; // How many "crawl iterations" it does before it stops. In the early dev phase I don't really want it going on endlessly yet.
-    // ========== ===== ==========
+    private int _crawlTimes = 0;
     
-    public async Task CrawlAsync()
+    public async Task CrawlAsync(CancellationToken ctoken)
     {
         Client.DefaultRequestHeaders.Add("User-Agent", Constants.CrawlerUserAgent); // Scorpio is benign and identifies itself.
         
-        for (var i = 0; i < _crawlTimes; i++)
+        while (!ctoken.IsCancellationRequested) 
         {
             if (_frontier.TryGetNextUrl(out var url))
             {
+                if (_crawlTimes >= _config.MaxCrawlIterations) throw new OperationCanceledException("Maximum Crawl Iterations reached.");
+                
                 Console.WriteLine($"Crawling {url}");
                 var baseUrl = Util.GetBaseUrl(url);
                 var robots = await _robotsCache.TryGetRobotsAsync(baseUrl); // Retrieve Robots.txt either from Cache or via HTTP request.
@@ -35,21 +35,22 @@ public class Crawler
                 {
                     // URL allowed according to respective Robots.txt
                     Console.WriteLine($"crawler allowed on {url}");
-                    await EnforceRequestDelayAsync(robots, baseUrl);
-                    var page = await FetchPageAsync(url);
+                    await EnforceRequestDelayAsync(robots, baseUrl, ctoken);
+                    var page = await FetchPageAsync(url, ctoken);
                     _lastAccessedCache[baseUrl] = DateTime.UtcNow;
                     await _database.SavePageAsync(page);
                     
                     var links = Util.ExtractLinks(url, page.Html);
                     foreach (var link in links) AddLinkToFrontier(link);
+
+                    _crawlTimes++;
                 }
             }
             else
             {
-                await Task.Delay(100);
+                await Task.Delay(100, ctoken);
             }
         }
-        
     }
     
     // Debug
@@ -59,7 +60,7 @@ public class Crawler
         _frontier.AddIfNew(normalizedLink);
     }
 
-    private async Task EnforceRequestDelayAsync(Robots robots, string baseUrl)
+    private async Task EnforceRequestDelayAsync(Robots robots, string baseUrl, CancellationToken ctoken)
     {
         var now = DateTime.UtcNow;
         
@@ -76,16 +77,16 @@ public class Crawler
             : TimeSpan.Zero;
         
         Console.WriteLine($"Waiting {delay.TotalSeconds} seconds (from {flatDelay.TotalSeconds})");
-        await Task.Delay(delay);
+        await Task.Delay(delay, ctoken);
     }
     
-    private async Task<CrawledPage> FetchPageAsync(string url)
+    private async Task<CrawledPage> FetchPageAsync(string url, CancellationToken ctoken)
     {
         try
         {
             Console.WriteLine($"Fetching {url}");
-            var httpResponse = await Client.GetAsync(url);
-            var html = await httpResponse.Content.ReadAsStringAsync();
+            var httpResponse = await Client.GetAsync(url, ctoken);
+            var html = await httpResponse.Content.ReadAsStringAsync(ctoken);
             Console.WriteLine($"Fetched {html.Substring(0, 50)}");
             
             // if (httpResponse.StatusCode is HttpStatusCode.TooManyRequests) DelayPenalty(url); TODO implement reaction to 429
