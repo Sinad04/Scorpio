@@ -8,18 +8,26 @@ public record CrawlerConfig (int FallBackDelayInSeconds, int MaxCrawlIterations)
 
 public class Crawler
 {
-    private static readonly HttpClient Client = new();
+    private readonly HttpClient _client = new();
+    private readonly RobotsCache _robotsCache;
+    
     private readonly LinkFrontier _frontier = new();
     private readonly CrawlerDb _database = new();
-    private readonly RobotsCache _robotsCache = new(Client);
+    
     private readonly Dictionary<string, DateTime> _lastAccessedCache = new();
     private readonly CrawlerConfig _config = new(8, 5);
     
     private int _crawlTimes = 0;
+
+    public Crawler()
+    {
+        _robotsCache = new RobotsCache(_client);
+    }
+    
     
     public async Task CrawlAsync(CancellationToken ctoken)
     {
-        Client.DefaultRequestHeaders.Add("User-Agent", Constants.CrawlerUserAgent); // Scorpio is benign and identifies itself.
+        _client.DefaultRequestHeaders.Add("User-Agent", Constants.CrawlerUserAgent); // Scorpio is benign and identifies itself.
         
         while (!ctoken.IsCancellationRequested) 
         {
@@ -86,7 +94,7 @@ public class Crawler
         try
         {
             Console.WriteLine($"Fetching {url}");
-            var httpResponse = await Client.GetAsync(url, ctoken);
+            var httpResponse = await _client.GetAsync(url, ctoken);
             var html = await httpResponse.Content.ReadAsStringAsync(ctoken);
             Console.WriteLine($"Fetched {html.Substring(0, 50)}");
             
