@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace WebCrawler;
 
-public record CrawlerConfig (int FallBackDelayInSeconds, int MaxCrawlIterations);
+public record CrawlerConfig (int FallBackDelayInSeconds, int MaxCrawlIterations, int BaseCooldownInSeconds);
 
 public class Crawler
 {
@@ -14,7 +14,8 @@ public class Crawler
     private readonly CrawlerDb _database = new();
     
     private readonly Dictionary<string, DateTime> _lastAccessedCache = new();
-    private readonly CrawlerConfig _config = new(8, 5);
+    private readonly Dictionary<string, TimeSpan> _domainCooldownCache = new();
+    private readonly CrawlerConfig _config = new(8, 5, 30);
     
     private int _crawlTimes = 0;
 
@@ -44,15 +45,22 @@ public class Crawler
                 
                 // URL allowed according to respective Robots.txt
                 await EnforceRequestDelayAsync(robots, baseUrl, ctoken);
+
+                // Check if the Crawler must not send requests to this domain at the moment due to an imposed cooldown (e.g. from 429) 
+                Console.WriteLine($"Check if Crawler has cooldown on: {normalizedNextUrl}.");
+                var cooldown = _domainCooldownCache.GetValueOrDefault(baseUrl, TimeSpan.Zero);
+                if ((_lastAccessedCache.TryGetValue(baseUrl, out var lastAccessedTime)
+                     && lastAccessedTime.Add(cooldown) > DateTime.UtcNow)) 
+                { Console.WriteLine($"Crawler has cooldown {cooldown} on {normalizedNextUrl}. {cooldown - DateTime.UtcNow.Subtract(lastAccessedTime)} remaining."); continue; }
                 
                 var page = await FetchPageAsync(normalizedNextUrl, ctoken);
                 _lastAccessedCache[baseUrl] = DateTime.UtcNow;
-                
+    
                 await _database.SavePageAsync(page);
-                    
+
                 var links = Util.ExtractLinks(normalizedNextUrl, page.Html);
                 foreach (var link in links) AddLinkToFrontier(link);
-
+                
                 _crawlTimes++;
             }
             else
@@ -95,16 +103,33 @@ public class Crawler
         {
             Console.WriteLine($"Fetching {url}");
             var httpResponse = await _client.GetAsync(url, ctoken);
-            var html = await httpResponse.Content.ReadAsStringAsync(ctoken);
-            Console.WriteLine($"Fetched {html.Substring(0, 50)}");
+            var html = "";
+            var baseUrl = Util.GetBaseUrl(url);
             
-            // if (httpResponse.StatusCode is HttpStatusCode.TooManyRequests) DelayPenalty(url); TODO implement reaction to 429
-            
+            if (httpResponse.IsSuccessStatusCode)
+            {
+                _domainCooldownCache.Remove(baseUrl);
+                html = await httpResponse.Content.ReadAsStringAsync(ctoken);
+                Console.WriteLine($"Successfully fetched {html.Substring(0, 50)}");
+            }
+            else if (httpResponse.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                Console.WriteLine("Got 429 Too Many Requests");
+                var retryAfter = httpResponse?.Headers?.RetryAfter?.Delta;
+                
+                if (retryAfter is not null)
+                    _domainCooldownCache[baseUrl] = retryAfter.Value;
+                else if (_domainCooldownCache.ContainsKey(baseUrl))
+                    _domainCooldownCache[baseUrl] *= 2;
+                else 
+                    _domainCooldownCache[baseUrl] = TimeSpan.FromSeconds(_config.BaseCooldownInSeconds);
+            }
+
             return new CrawledPage()
             {
                 Url = url,
                 Html = html,
-                ResponseCode = httpResponse.StatusCode,
+                ResponseCode = httpResponse?.StatusCode,
                 Content = Util.ExtractText(html),
                 CrawledAt = DateTime.UtcNow,
             };
