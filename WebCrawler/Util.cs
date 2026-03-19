@@ -44,7 +44,7 @@ public static class Util
             .SelectMany(k => unsortedQueryParameters
                 .GetValues(k)!
                 .OrderBy(v => v)
-                .Select(v => $"{Uri.EscapeDataString(k)}={Uri.EscapeDataString(v)}"));
+                .Select(v => $"{Uri.EscapeDataString(k ?? "")}={Uri.EscapeDataString(v)}"));
 
         return string.Join('&', queryParameters);
     }
