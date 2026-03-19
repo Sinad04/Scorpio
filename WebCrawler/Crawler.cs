@@ -16,7 +16,7 @@ public class Crawler
     
     private readonly Dictionary<string, DateTime> _lastAccessedCache = new();
     private readonly Dictionary<string, TimeSpan> _domainCooldownCache = new();
-    private readonly CrawlerConfig _config = new(8, 20, 30);
+    private readonly CrawlerConfig _config = new(6, 30, 5);
     
     private int _crawlTimes = 0;
 
@@ -39,20 +39,21 @@ public class Crawler
                 
                 Log.Info($"Crawling {normalizedNextUrl}.");
                 var baseUrl = Util.GetBaseUrl(normalizedNextUrl);
-                var robots = await _robotsCache.TryGetRobotsAsync(baseUrl); // Retrieve Robots.txt either from Cache or via HTTP request.
-
+                
+                // Check if the Crawler must not send requests to this domain at the moment due to an imposed cooldown (e.g. from 429) 
+                Log.Info($"Checking if Crawler has cooldown on: {baseUrl}.");
+                var cooldown = _domainCooldownCache.GetValueOrDefault(baseUrl, TimeSpan.Zero);
+                if ((_lastAccessedCache.TryGetValue(baseUrl, out var lastAccessedTime)
+                     && lastAccessedTime.Add(cooldown) > DateTime.UtcNow)) 
+                { Log.Info($"Crawler has cooldown {cooldown} on {baseUrl} with {cooldown - DateTime.UtcNow.Subtract(lastAccessedTime)} remaining. Skipping URL."); continue; }
+                
+                // Retrieve Robots.txt either from Cache or via HTTP request.
+                var robots = await _robotsCache.TryGetRobotsAsync(baseUrl, ctoken); 
                 if (!robots.IsPathAllowed(Constants.CrawlerUserAgent, Util.GetPath(normalizedNextUrl))) 
                 { Log.Info($"Crawler not allowed on {normalizedNextUrl}. Skipping URL."); continue; }
                 
                 // URL allowed according to respective Robots.txt
                 await EnforceRequestDelayAsync(robots, baseUrl, ctoken);
-
-                // Check if the Crawler must not send requests to this domain at the moment due to an imposed cooldown (e.g. from 429) 
-                Log.Info($"Checking if Crawler has cooldown on: {normalizedNextUrl}.");
-                var cooldown = _domainCooldownCache.GetValueOrDefault(baseUrl, TimeSpan.Zero);
-                if ((_lastAccessedCache.TryGetValue(baseUrl, out var lastAccessedTime)
-                     && lastAccessedTime.Add(cooldown) > DateTime.UtcNow)) 
-                { Log.Info($"Crawler has cooldown {cooldown} on {normalizedNextUrl} with {cooldown - DateTime.UtcNow.Subtract(lastAccessedTime)} remaining. Skipping URL."); continue; }
                 
                 var page = await FetchPageAsync(normalizedNextUrl, ctoken);
                 _lastAccessedCache[baseUrl] = DateTime.UtcNow;
@@ -140,7 +141,7 @@ public class Crawler
         catch (Exception e)
         {
             Log.Warn($"An error occurred while fetching {url}: {e.Message}");
-            return null; //TODO error handling
+            return new CrawledPage() { CrawledAt = DateTime.UtcNow }; // Empty table entry.
         }
     }
 
