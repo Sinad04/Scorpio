@@ -1,6 +1,5 @@
-using System.Net;
-using HtmlAgilityPack;
 using RobotsTxtParser;
+using System.Text.Json;
 
 namespace WebCrawler;
 
@@ -11,7 +10,7 @@ public class Crawler
     private readonly HttpClient _client = new();
     private readonly RobotsCache _robotsCache;
     
-    private readonly LinkFrontier _frontier = new();
+    private readonly LinkFrontier _frontier;
     private readonly CrawlerDb _database = new();
     
     private readonly Dictionary<string, DateTime> _lastAccessedCache = new();
@@ -19,8 +18,9 @@ public class Crawler
     
     private int _crawlTimes = 0;
 
-    public Crawler()
+    public Crawler(List<string>? urls, List<string>? visited)
     {
+        _frontier = new LinkFrontier(urls, visited);
         _robotsCache = new RobotsCache(_client);
     }
     
@@ -114,6 +114,11 @@ public class Crawler
             Console.WriteLine(e.Message);
             return null; //TODO error handling
         }
+    }
+
+    public string GetFrontierAsJsonString()
+    {
+        return JsonSerializer.Serialize(_frontier);
     }
     
 }
