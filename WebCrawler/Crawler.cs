@@ -16,7 +16,7 @@ public class Crawler
     
     private readonly Dictionary<string, DateTime> _lastAccessedCache = new();
     private readonly Dictionary<string, TimeSpan> _domainCooldownCache = new();
-    private readonly CrawlerConfig _config = new(8, 5, 30);
+    private readonly CrawlerConfig _config = new(8, 20, 30);
     
     private int _crawlTimes = 0;
 
@@ -37,22 +37,22 @@ public class Crawler
             {
                 if (_crawlTimes >= _config.MaxCrawlIterations) throw new OperationCanceledException("Maximum Crawl Iterations reached.");
                 
-                Console.WriteLine($"Crawling {normalizedNextUrl}");
+                Log.Info($"Crawling {normalizedNextUrl}.");
                 var baseUrl = Util.GetBaseUrl(normalizedNextUrl);
                 var robots = await _robotsCache.TryGetRobotsAsync(baseUrl); // Retrieve Robots.txt either from Cache or via HTTP request.
 
                 if (!robots.IsPathAllowed(Constants.CrawlerUserAgent, Util.GetPath(normalizedNextUrl))) 
-                { Console.WriteLine($"Crawler not allowed on {normalizedNextUrl}."); continue; }
+                { Log.Info($"Crawler not allowed on {normalizedNextUrl}. Skipping URL."); continue; }
                 
                 // URL allowed according to respective Robots.txt
                 await EnforceRequestDelayAsync(robots, baseUrl, ctoken);
 
                 // Check if the Crawler must not send requests to this domain at the moment due to an imposed cooldown (e.g. from 429) 
-                Console.WriteLine($"Check if Crawler has cooldown on: {normalizedNextUrl}.");
+                Log.Info($"Checking if Crawler has cooldown on: {normalizedNextUrl}.");
                 var cooldown = _domainCooldownCache.GetValueOrDefault(baseUrl, TimeSpan.Zero);
                 if ((_lastAccessedCache.TryGetValue(baseUrl, out var lastAccessedTime)
                      && lastAccessedTime.Add(cooldown) > DateTime.UtcNow)) 
-                { Console.WriteLine($"Crawler has cooldown {cooldown} on {normalizedNextUrl}. {cooldown - DateTime.UtcNow.Subtract(lastAccessedTime)} remaining."); continue; }
+                { Log.Info($"Crawler has cooldown {cooldown} on {normalizedNextUrl} with {cooldown - DateTime.UtcNow.Subtract(lastAccessedTime)} remaining. Skipping URL."); continue; }
                 
                 var page = await FetchPageAsync(normalizedNextUrl, ctoken);
                 _lastAccessedCache[baseUrl] = DateTime.UtcNow;
@@ -85,16 +85,16 @@ public class Crawler
         var flatDelay = robots.CrawlDelay(Constants.CrawlerUserAgent, TimeSpan.FromSeconds(_config.FallBackDelayInSeconds)); // Robots.txt crawl delay or fallback value.
         
         var lastAccessed = _lastAccessedCache.GetValueOrDefault(baseUrl, now.Subtract(flatDelay)); // If it was never accessed before, pretend the last server response was exactly the flat Crawl Delay ago.
-        Console.WriteLine($"Last accessed: {lastAccessed}");
+        
         var diff = now.Subtract(lastAccessed); // How much of the Crawl Delay has technically already passed since the last server response.
-        Console.WriteLine($"Difference: {diff}");
+        
         var delay = flatDelay.Subtract(diff);
         
         delay = (delay > TimeSpan.Zero)
             ? delay.Add(TimeSpan.FromMilliseconds(Util.Random.Next(0, 2000))) // Adding a little variance to make it more human-like (only add to respect the lower bound).
             : TimeSpan.Zero;
         
-        Console.WriteLine($"Waiting {delay.TotalSeconds} seconds (from {flatDelay.TotalSeconds})");
+        Log.Info($"Waiting {delay.TotalSeconds} seconds (from flat amount {flatDelay.TotalSeconds})");
         await Task.Delay(delay, ctoken);
     }
     
@@ -102,7 +102,7 @@ public class Crawler
     {
         try
         {
-            Console.WriteLine($"Fetching {url}");
+            Log.Info($"Attempting to fetch {url}.");
             var httpResponse = await _client.GetAsync(url, ctoken);
             var html = "";
             var baseUrl = Util.GetBaseUrl(url);
@@ -111,19 +111,21 @@ public class Crawler
             {
                 _domainCooldownCache.Remove(baseUrl);
                 html = await httpResponse.Content.ReadAsStringAsync(ctoken);
-                Console.WriteLine($"Successfully fetched {html.Substring(0, 50)}");
+                Log.Info($"Successfully fetched document. Content (truncated): {html.Substring(0, 80)}");
             }
             else if (httpResponse.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                Console.WriteLine("Got 429 Too Many Requests");
+                Log.Warn($"Got 429 Too Many Requests. Imposing cooldown on domain {baseUrl}.");
                 var retryAfter = httpResponse?.Headers?.RetryAfter?.Delta;
-                
+
                 if (retryAfter is not null)
                     _domainCooldownCache[baseUrl] = retryAfter.Value;
                 else if (_domainCooldownCache.ContainsKey(baseUrl))
                     _domainCooldownCache[baseUrl] *= 2;
                 else 
                     _domainCooldownCache[baseUrl] = TimeSpan.FromSeconds(_config.BaseCooldownInSeconds);
+
+                Log.Info($"Will retry domain {baseUrl} after {_domainCooldownCache[baseUrl]} (at the earliest).");
             }
 
             return new CrawledPage()
@@ -137,7 +139,7 @@ public class Crawler
         }
         catch (Exception e)
         {
-            Console.WriteLine(e.Message);
+            Log.Warn($"An error occurred while fetching {url}: {e.Message}");
             return null; //TODO error handling
         }
     }

@@ -12,9 +12,9 @@ public class RobotsCache
     
     public async Task<Robots> TryGetRobotsAsync(string baseUrl)
     {
-        Console.WriteLine($"Checking robots cache for {baseUrl}");
+        Log.Info($"Querying robots cache for {baseUrl}");
         if (_robotsCache.TryGetValue(baseUrl, out var robots)) return robots;
-        Console.WriteLine($"{baseUrl} not found in robots cache.");
+        Log.Info($"{baseUrl} not found in robots cache. Attempting to retrieve robots.txt from web server.");
         var robotsString = await _client.GetStringAsync($"{baseUrl}/robots.txt"); // TODO handle unsuccessful request
         
         robots = new Robots(robotsString);
