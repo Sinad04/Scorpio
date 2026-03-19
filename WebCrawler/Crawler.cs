@@ -15,6 +15,7 @@ public class Crawler
     private readonly CrawlerDb _database = new();
     
     private readonly Dictionary<string, DateTime> _lastAccessedCache = new();
+    private readonly Dictionary<string, DateTime> _domainCooldownCache = new();
     private readonly CrawlerConfig _config = new(8, 5);
     
     private int _crawlTimes = 0;
@@ -95,9 +96,30 @@ public class Crawler
         {
             Console.WriteLine($"Fetching {url}");
             var httpResponse = await _client.GetAsync(url, ctoken);
-            var html = await httpResponse.Content.ReadAsStringAsync(ctoken);
-            Console.WriteLine($"Fetched {html.Substring(0, 50)}");
-            
+
+            if (httpResponse.IsSuccessStatusCode)
+            {
+                var html = await httpResponse.Content.ReadAsStringAsync(ctoken);
+                Console.WriteLine($"Successfully fetched {html.Substring(0, 50)}");
+            }
+            else if (httpResponse.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                var retryAfter = httpResponse?.Headers?.RetryAfter?.Delta;
+                var now = DateTime.UtcNow;
+                var baseUrl = Util.GetBaseUrl(url);
+                
+                if (retryAfter is not null)
+                {
+                    _domainCooldownCache[baseUrl] = now.Add(retryAfter.Value);
+                }
+                else if (!_domainCooldownCache.TryGetValue(baseUrl, out var domainCooldown))
+                {
+                    domainCooldown = now.Add(TimeSpan.FromSeconds(_config.BaseCooldownInSeconds));  // TODO exponential backoff
+                    _domainCooldownCache[baseUrl] = domainCooldown;
+                }
+                
+
+            }
             // if (httpResponse.StatusCode is HttpStatusCode.TooManyRequests) DelayPenalty(url); TODO implement reaction to 429
             
             return new CrawledPage()
