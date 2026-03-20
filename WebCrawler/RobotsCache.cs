@@ -37,10 +37,10 @@ public class RobotsCache
                 {
                     case HttpStatusCode.NotFound:
                         Log.Info($"No robots.txt found at {baseUrl}. Checking for redirect.");
-
                         var redirectedBaseUrlString = await CheckForRedirectedBaseUrlAsync(baseUrl, ctoken);
+                        Log.Info($"Redirected to: {redirectedBaseUrlString}.");
                         
-                        if (string.IsNullOrWhiteSpace(redirectedBaseUrlString) && redirectedBaseUrlString != baseUrl) 
+                        if (!string.IsNullOrWhiteSpace(redirectedBaseUrlString) && redirectedBaseUrlString != baseUrl) 
                         { 
                             queriedBaseUrl = redirectedBaseUrlString; 
                             redirects++; 
