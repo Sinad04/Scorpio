@@ -16,14 +16,15 @@ public class Crawler
     
     private readonly Dictionary<string, DateTime> _lastAccessedCache = new();
     private readonly Dictionary<string, TimeSpan> _domainCooldownCache = new();
-    private readonly CrawlerConfig _config = new(6, 30, 5);
+    private readonly CrawlerConfig _config;
     
     private int _crawlTimes = 0;
 
-    public Crawler(List<string>? urls, List<string>? visited)
+    public Crawler(List<string>? urls, List<string>? visited, CrawlerConfig config)
     {
         _frontier = new LinkFrontier(urls, visited);
         _robotsCache = new RobotsCache(_client);
+        _config = config;
     }
     
     
@@ -67,7 +68,7 @@ public class Crawler
             }
             else
             {
-                await Task.Delay(100, ctoken);
+                throw new OperationCanceledException("Link frontier empty. Please provide seed url.");
             }
         }
     }
