@@ -1,6 +1,7 @@
 using System.Net;
 using RobotsTxtParser;
 using System.Text.Json;
+using HtmlAgilityPack;
 
 namespace WebCrawler;
 
@@ -13,6 +14,7 @@ public class Crawler
     
     private readonly LinkFrontier _frontier;
     private readonly CrawlerDb _database = new();
+    private readonly RequestRateMonitor _requestRateMonitor = new(TimeSpan.FromSeconds(10), 10);
     
     private readonly Dictionary<string, DateTime> _lastAccessedCache = new();
     private readonly Dictionary<string, TimeSpan> _domainCooldownCache = new();
@@ -32,8 +34,9 @@ public class Crawler
     {
         _client.DefaultRequestHeaders.Add("User-Agent", Constants.CrawlerUserAgent); // Scorpio is benign and identifies itself.
         
-        while (!ctoken.IsCancellationRequested) 
+        while (!ctoken.IsCancellationRequested)
         {
+            if (_requestRateMonitor.IsRateExceeded()) throw new OperationCanceledException("Request Rate exceeded. Check if the configuration is too aggressive for the rate window. Otherwise this is very possibly from a bug in the code.");
             if (_frontier.TryGetNextUrl(out var normalizedNextUrl))
             {
                 if (_crawlTimes >= _config.MaxCrawlIterations) throw new OperationCanceledException("Maximum Crawl Iterations reached.");
@@ -58,10 +61,11 @@ public class Crawler
                 
                 var page = await FetchPageAsync(normalizedNextUrl, ctoken);
                 _lastAccessedCache[baseUrl] = DateTime.UtcNow;
-    
+                _requestRateMonitor.RecordRequest();
+                
                 await _database.SavePageAsync(page);
 
-                var links = Util.ExtractLinks(normalizedNextUrl, page.Html);
+                var links = Util.ExtractLinks(normalizedNextUrl, page.RawHtml);
                 foreach (var link in links) AddLinkToFrontier(link);
                 
                 _crawlTimes++;
@@ -107,6 +111,7 @@ public class Crawler
             Log.Info($"Attempting to fetch {url}.");
             var httpResponse = await _client.GetAsync(url, ctoken);
             var html = "";
+            var title = "";
             var baseUrl = Util.GetBaseUrl(url);
             
             if (httpResponse.IsSuccessStatusCode)
@@ -133,9 +138,9 @@ public class Crawler
             return new CrawledPage()
             {
                 Url = url,
-                Html = html,
-                ResponseCode = httpResponse?.StatusCode,
-                Content = Util.ExtractText(html),
+                RawHtml = html,
+                StatusCode = httpResponse?.StatusCode,
+                TextContent = Util.ExtractText(html),
                 CrawledAt = DateTime.UtcNow,
             };
         }
