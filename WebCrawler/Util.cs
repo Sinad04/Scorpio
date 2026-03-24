@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using System.Web;
+using System.Text;
 using HtmlAgilityPack;
 
 namespace WebCrawler;
@@ -101,14 +102,30 @@ public static class Util
     {
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
+        return ExtractTextFromNode(doc.DocumentNode);
+    }
+    
+    private static string ExtractTextFromNode(HtmlNode node)
+    {
+        switch (node.NodeType)
+        {
+            case HtmlNodeType.Text: return node.InnerText.Trim();
+            case HtmlNodeType.Element:
+                if (node.Name == "script" || node.Name == "style") return ""; break;
+        }
 
-        doc.DocumentNode.Descendants()
-            .Where(n => n.Name == "script" || n.Name == "style")
-            .ToList()
-            .ForEach(n => n.Remove());
+        var sb = new StringBuilder();
+        foreach ( var child in node.ChildNodes )
+        {
+            var childText = ExtractTextFromNode(child);
 
-        string text = doc.DocumentNode.InnerText;
-        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
-        return text;
+            if (!string.IsNullOrWhiteSpace(childText))
+            {
+                if (sb.Length > 0 && !char.IsWhiteSpace(sb[^1])) sb.Append(' ');
+            }
+            
+            sb.Append(childText);
+        }
+        return sb.ToString().Trim();
     }
 }
