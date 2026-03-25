@@ -32,7 +32,8 @@ public class Crawler
     
     public async Task CrawlAsync(CancellationToken ctoken)
     {
-        _client.DefaultRequestHeaders.Add("User-Agent", Constants.CrawlerUserAgent); // Scorpio is benign and identifies itself.
+        _client.DefaultRequestHeaders.UserAgent.ParseAdd(Constants.CrawlerUserAgent); // Scorpio is benign and identifies itself.
+        _client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.9,de;q=0.5");
         
         while (!ctoken.IsCancellationRequested)
         {
@@ -111,7 +112,6 @@ public class Crawler
             Log.Info($"Attempting to fetch {url}.");
             var httpResponse = await _client.GetAsync(url, ctoken);
             var html = "";
-            var title = "";
             var baseUrl = Util.GetBaseUrl(url);
             
             if (httpResponse.IsSuccessStatusCode)
@@ -138,8 +138,9 @@ public class Crawler
             return new CrawledPage()
             {
                 Url = url,
-                RawHtml = html,
                 StatusCode = httpResponse?.StatusCode,
+                Title = Util.ExtractTitle(html),
+                RawHtml = html,
                 TextContent = Util.ExtractText(html),
                 CrawledAt = DateTime.UtcNow,
             };
