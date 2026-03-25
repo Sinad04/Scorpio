@@ -63,11 +63,13 @@ public class CrawledPage
     [Unique, MaxLength(500)]
     public string? Url { get; set; }
     
-    public HttpStatusCode? ResponseCode { get; set; }
+    public string? Title { get; set; }
     
-    public string? Content { get; set; }
+    public HttpStatusCode? StatusCode { get; set; }
     
-    public string? Html { get; set; }
+    public string? TextContent { get; set; }
+    
+    public string? RawHtml { get; set; }
     
     public DateTime CrawledAt { get; set; }
 }
