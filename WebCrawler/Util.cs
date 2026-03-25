@@ -98,6 +98,14 @@ public static class Util
         return links;
     }
 
+    public static string ExtractTitle(string html)
+    {
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+        var titleNode = doc.DocumentNode.SelectSingleNode("//title");
+        return titleNode?.InnerText?.Trim() ?? "";
+    }
+    
     public static string ExtractText(string html)
     {
         var doc = new HtmlDocument();
@@ -109,7 +117,7 @@ public static class Util
     {
         switch (node.NodeType)
         {
-            case HtmlNodeType.Text: return node.InnerText.Trim();
+            case HtmlNodeType.Text: return HttpUtility.HtmlDecode(node.InnerText.Trim());
             case HtmlNodeType.Element:
                 if (node.Name == "script" || node.Name == "style") return ""; break;
         }
