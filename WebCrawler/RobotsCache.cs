@@ -4,12 +4,9 @@ using RobotsTxtParser;
 
 namespace WebCrawler;
 
-public class RobotsCache
+public class RobotsCache(HttpClient client, RequestRateMonitor requestRateMonitor)
 {
     private readonly ConcurrentDictionary<string, Robots> _robotsCache = new();
-    private readonly HttpClient _client;
-    
-    public RobotsCache(HttpClient client) { _client = client; }
     
     public async Task<Robots> TryGetRobotsAsync(string baseUrl, CancellationToken ctoken)
     {
@@ -23,8 +20,9 @@ public class RobotsCache
         
         while (robots is null && redirects <= 3)
         {
-            using var robotsResponseMessage = await _client.GetAsync($"{queriedBaseUrl}/robots.txt", ctoken);
-
+            using var robotsResponseMessage = await client.GetAsync($"{queriedBaseUrl}/robots.txt", ctoken);
+            requestRateMonitor.RecordRequest();
+            
             if (robotsResponseMessage.IsSuccessStatusCode)
             {
                 Log.Info($"{queriedBaseUrl} has robots.txt.");
@@ -69,7 +67,8 @@ public class RobotsCache
     private async Task<string> CheckForRedirectedBaseUrlAsync(string baseUrl, CancellationToken ctoken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Head, baseUrl);
-        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ctoken);
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ctoken);
+        requestRateMonitor.RecordRequest();
         
         var redirectedBaseUrl = response?.RequestMessage?.RequestUri;
         return Util.NormalizeUrl(redirectedBaseUrl?.ToString() ?? baseUrl);

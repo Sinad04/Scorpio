@@ -5,28 +5,31 @@ using HtmlAgilityPack;
 
 namespace WebCrawler;
 
-public record CrawlerConfig (int FallBackDelayInSeconds, int MaxCrawlIterations, int BaseCooldownInSeconds);
+public record CrawlerConfig (int FallBackDelayInSeconds, int MaxCrawlIterations, int BaseCooldownInSeconds, Tuple<int, int> MaxRequestRate);
 
 public class Crawler
 {
+    private readonly CrawlerConfig _config;
     private readonly HttpClient _client = new();
     private readonly RobotsCache _robotsCache;
     
     private readonly LinkFrontier _frontier;
     private readonly CrawlerDb _database = new();
-    private readonly RequestRateMonitor _requestRateMonitor = new(TimeSpan.FromSeconds(10), 10);
+    private readonly RequestRateMonitor _requestRateMonitor;
     
     private readonly Dictionary<string, DateTime> _lastAccessedCache = new();
     private readonly Dictionary<string, TimeSpan> _domainCooldownCache = new();
-    private readonly CrawlerConfig _config;
+    
     
     private int _crawlTimes = 0;
 
     public Crawler(List<string>? urls, List<string>? visited, CrawlerConfig config)
     {
         _frontier = new LinkFrontier(urls, visited);
-        _robotsCache = new RobotsCache(_client);
         _config = config;
+        _requestRateMonitor =
+            new RequestRateMonitor(TimeSpan.FromSeconds(_config.MaxRequestRate.Item1), _config.MaxRequestRate.Item2);
+        _robotsCache = new RobotsCache(_client, _requestRateMonitor);
     }
     
     
@@ -40,7 +43,7 @@ public class Crawler
             if (_requestRateMonitor.IsRateExceeded()) throw new OperationCanceledException("Request Rate exceeded. Check if the configuration is too aggressive for the rate window. Otherwise this is very possibly from a bug in the code.");
             if (_frontier.TryGetNextUrl(out var normalizedNextUrl))
             {
-                if (_crawlTimes >= _config.MaxCrawlIterations) throw new OperationCanceledException("Maximum Crawl Iterations reached.");
+                if (_crawlTimes >= _config.MaxCrawlIterations) throw new OperationCanceledException($"Maximum Crawl Iterations ({_config.MaxCrawlIterations}) reached.");
                 
                 Log.Info($"Crawling {normalizedNextUrl}.");
                 var baseUrl = Util.GetBaseUrl(normalizedNextUrl);

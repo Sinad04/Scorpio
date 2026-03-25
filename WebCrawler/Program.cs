@@ -21,7 +21,8 @@ class Program
         
         var linkFrontier = ReadSaveState();
         var crawler = new Crawler(linkFrontier?.Urls, linkFrontier?.Visited, config);
-        
+
+        foreach (var seedUrl in urls) Console.WriteLine(seedUrl);
         foreach (var seedUrl in urls) crawler.AddLinkToFrontier(seedUrl); 
         
         try
@@ -41,12 +42,16 @@ class Program
         var delay = 5;
         var iterations = int.MaxValue;
         var cooldown = 10;
+        var windowSize = 10;
+        var maxRequestsInWindow = 10;
         for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
                 case "--seed":
-                case "-s": if (i + 1 < args.Length) seedUrls.Add(args[++i]); break;
+                case "-s":
+                    while (!args[++i].StartsWith('-')) { seedUrls.Add(args[i]); }
+                    i--; break;
                 case "--iterations":
                 case "-i": if (i + 1 < args.Length) iterations = int.Parse(args[++i]); break;
                 case "--delay":
@@ -54,11 +59,15 @@ class Program
                 case "--cooldown":
                 case "-c": if (i + 1 < args.Length) cooldown = int.Parse(args[++i]); break;
                 case "--quiet":
-                case "-q": Log.MakeQuieter(); break;     
+                case "-q": Log.MakeQuieter(); break;
+                case "--rate":
+                case "-r": if (i + 2 < args.Length) windowSize = int.Parse(args[++i]); maxRequestsInWindow = int.Parse(args[++i]); break;
             }
         }
+
+        Console.WriteLine($"{windowSize}, {maxRequestsInWindow}");
         
-        config = new CrawlerConfig(delay, iterations, cooldown);
+        config = new CrawlerConfig(delay, iterations, cooldown, new Tuple<int, int>(windowSize, maxRequestsInWindow));
     }
 
     private static LinkFrontier? ReadSaveState()
