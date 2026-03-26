@@ -33,6 +33,8 @@ public class RobotsCache(HttpClient client, RequestRateMonitor requestRateMonito
             {
                 switch (robotsResponseMessage.StatusCode)
                 {
+                    case HttpStatusCode.BadRequest:
+                        Log.Warn($"Got 400 Bad Request from {baseUrl}."); break;
                     case HttpStatusCode.NotFound:
                         Log.Info($"No robots.txt found at {baseUrl}. Checking for redirect.");
                         var redirectedBaseUrlString = await CheckForRedirectedBaseUrlAsync(baseUrl, ctoken);
