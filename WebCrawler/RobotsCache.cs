@@ -17,9 +17,11 @@ public class RobotsCache(HttpClient client, RequestRateMonitor requestRateMonito
         Robots? robots = null;
         var queriedBaseUrl = baseUrl;
         var redirects = 0;
+        var failed = false;
         
-        while (robots is null && redirects <= 3)
+        while (robots is null && redirects <= 3 && !failed)
         {
+            if (requestRateMonitor.IsRateExceeded()) throw new OperationCanceledException("Request Rate exceeded. Check if the configuration is too aggressive for the rate window. Otherwise this is very possibly from a bug in the code.");
             using var robotsResponseMessage = await client.GetAsync($"{queriedBaseUrl}/robots.txt", ctoken);
             requestRateMonitor.RecordRequest();
             
@@ -33,8 +35,6 @@ public class RobotsCache(HttpClient client, RequestRateMonitor requestRateMonito
             {
                 switch (robotsResponseMessage.StatusCode)
                 {
-                    case HttpStatusCode.BadRequest:
-                        Log.Warn($"Got 400 Bad Request from {baseUrl}."); break;
                     case HttpStatusCode.NotFound:
                         Log.Info($"No robots.txt found at {baseUrl}. Checking for redirect.");
                         var redirectedBaseUrlString = await CheckForRedirectedBaseUrlAsync(baseUrl, ctoken);
@@ -49,9 +49,9 @@ public class RobotsCache(HttpClient client, RequestRateMonitor requestRateMonito
                         Log.Warn($"No robots.txt found for {baseUrl}. Assuming Crawler allowed everywhere.");
                         robots ??= new Robots(""); // If no robots.txt is provided by the domain, then assume Crawler is allowed everywhere.
                         break;
-                    
                     case HttpStatusCode.TooManyRequests:
                         return new Robots(""); // If client is temporarily rate-limited, do not cache.
+                    default: failed = true; break;
                 }
             }
         }
@@ -59,7 +59,7 @@ public class RobotsCache(HttpClient client, RequestRateMonitor requestRateMonito
         if (robots is null)
         {
             Log.Warn($"Could not acquire robots.txt for {baseUrl}. Assuming Crawler not allowed on domain.");
-            robots = new Robots("User-agent: *\r\nDisallow: \\"); // If robots.txt couldn't be acquired, to be safe, assume for this domain that Crawler isn't allowed.
+            robots = new Robots("User-Agent: *\r\nDisallow: /"); // If robots.txt couldn't be acquired, to be safe, assume for this domain that Crawler isn't allowed.
         }
         
         _robotsCache.TryAdd(baseUrl, robots);
