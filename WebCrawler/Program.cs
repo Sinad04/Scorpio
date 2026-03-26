@@ -43,14 +43,14 @@ class Program
         var iterations = int.MaxValue;
         var cooldown = 10;
         var windowSize = 10;
-        var maxRequestsInWindow = 10;
+        var maxRequestsInWindow = 20;
         for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
                 case "--seed":
                 case "-s":
-                    while (!args[++i].StartsWith('-')) { seedUrls.Add(args[i]); }
+                    while (args.Length > ++i && !args[i].StartsWith('-')) { seedUrls.Add(args[i]); }
                     i--; break;
                 case "--iterations":
                 case "-i": if (i + 1 < args.Length) iterations = int.Parse(args[++i]); break;
@@ -61,7 +61,10 @@ class Program
                 case "--quiet":
                 case "-q": Log.MakeQuieter(); break;
                 case "--rate":
-                case "-r": if (i + 2 < args.Length) windowSize = int.Parse(args[++i]); maxRequestsInWindow = int.Parse(args[++i]); break;
+                case "-r": if (i + 2 < args.Length && !args[i+1].StartsWith('-') && !args[i+2].StartsWith('-')) 
+                    windowSize = int.Parse(args[++i]); maxRequestsInWindow = int.Parse(args[++i]); break;
+                default:
+                    Log.Error("Invalid argument(s)."); break;
             }
         }
 
